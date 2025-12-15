@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Spin The Bottle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI,sans-serif;
+  background:#0b0b0f;
+  color:white;
+  text-align:center;
+}
+
+h1{
+  color:#ff7ad9;
+  margin:16px 0;
+}
+
+button,input{
+  padding:10px 16px;
+  margin:6px;
+  border-radius:8px;
+  border:none;
+  font-size:16px;
+}
+
+button{
+  background:linear-gradient(135deg,#ff7ad9,#7c7cff);
+  color:white;
+  cursor:pointer;
+}
+
+button:disabled{
+  opacity:0.4;
+  cursor:not-allowed;
+}
+
+input{
+  background:#1a1a25;
+  color:white;
+  border:1px solid #ff7ad9;
+}
+
+.hidden{display:none}
+
+.game-area{
+  width:420px;
+  height:420px;
+  margin:20px auto;
+  position:relative;
+  border-radius:50%;
+  background:conic-gradient(
+    #ff7ad9,
+    #7c7cff,
+    #6dffb8,
+    #ffd86d,
+    #ff7ad9
+  );
+}
+
+.bottle{
+  position:absolute;
+  top:50%;
+  left:50%;
+  width:160px;
+  height:160px;
+  background:url("https://i.ibb.co/nqVdXy8v/image-1.png") center no-repeat;
+  background-size:contain;
+  transform:translate(-50%,-50%) rotate(0deg);
+  transition:transform 4s ease-out;
+}
+
+.player{
+  position:absolute;
+  transform:translate(-50%,-50%);
+  font-size:14px;
+  font-weight:600;
+  text-shadow:0 0 4px black;
+}
+
+.question-box{
+  margin-top:16px;
+  font-size:18px;
+  padding:12px;
+}
+
+.truth{
+  background:linear-gradient(135deg,#b66dff,#ff7ad9);
+}
+
+.dare{
+  background:linear-gradient(135deg,#ff4d9d,#ff7ad9);
+}
+</style>
+</head>
+
+<body>
+
+<h1>Spin The Bottle</h1>
+
+<div id="mode">
+  <button onclick="normalMode()">Normal Mode</button>
+  <button onclick="roomMode()">Create Or Join Room</button>
+</div>
+
+<div id="normalSetup" class="hidden">
+  <input id="normalName" placeholder="Player name">
+  <button onclick="addNormalPlayer()">Add</button>
+  <p id="normalCount"></p>
+  <button onclick="startNormal()">Start Game</button>
+</div>
+
+<div id="roomSetup" class="hidden">
+  <button onclick="createRoom()">Create Room</button><br>
+  <input id="joinCode" placeholder="Room Code">
+  <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<div id="lobby" class="hidden">
+  <h2>Room Code <span id="roomCode"></span></h2>
+  <input id="playerName" placeholder="Your name">
+  <button onclick="joinGame()">Join Game</button>
+  <p id="playersList"></p>
+  <button onclick="startMultiplayer()">Start Game</button>
+</div>
+
+<div id="game" class="hidden">
+  <p id="turnInfo"></p>
+
+  <div class="game-area" id="area">
+    <div class="bottle" id="bottle"></div>
+  </div>
+
+  <h2 id="result">Tap bottle</h2>
+
+  <div id="tdBox" class="hidden">
+    <button class="truth" onclick="pickTruth()">Truth</button>
+    <button class="dare" onclick="pickDare()">Dare</button>
+  </div>
+
+  <div class="question-box" id="question"></div>
+</div>
+
+<audio id="spinSound">
+  <source src="https://files.catbox.moe/x821vj.mp3" type="audio/mpeg">
+</audio>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"
+import { getDatabase, ref, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js"
+
+/* 🔥 YOUR FIREBASE CONFIG ALREADY SET */
+const firebaseConfig={
+  apiKey:"AIzaSyCXpP9X2KSEWK-KGshCTEBvFSmA4pK-mS8",
+  authDomain:"e-protocol-spin-the-bottle.firebaseapp.com",
+  databaseURL:"https://e-protocol-spin-the-bottle-default-rtdb.firebaseio.com",
+  projectId:"e-protocol-spin-the-bottle",
+  appId:"1:278406713058:web:72db8fa701f92b865018bb"
+}
+
+const app=initializeApp(firebaseConfig)
+const db=getDatabase(app)
+
+/* QUESTIONS */
+const truths=[
+  "Sach batao Discord pe sabse zyada lurk kaun karta hai",
+  "RYUK Scribble ban accident tha ya planning",
+  "Chaze ko dekh ke rules yaad aate hain na",
+  "Sunflower ka reply dekh ke lagta hai helper 24x7 online hai",
+  "Sach batao kitni baar VC join karke mute rahe ho"
+]
+
+const dares=[
+  "Chat mein likho Justice for RYUK Scribble edition",
+  "Apna status 5 minute ke liye Professional Lurker rakho",
+  "VC join karo sirf Hi bolke leave karo",
+  "Chat mein likho I definitely read the rules",
+  "Chaze ko bina tag CM bol do"
+]
+
+let modeType=""
+let players=[]
+let roomId=""
+let myName=""
+let rotation=0
+
+const spinSound=document.getElementById("spinSound")
+
+window.normalMode=()=>{
+  modeType="normal"
+  mode.classList.add("hidden")
+  normalSetup.classList.remove("hidden")
+}
+
+window.roomMode=()=>{
+  modeType="multi"
+  mode.classList.add("hidden")
+  roomSetup.classList.remove("hidden")
+}
+
+let normalPlayers=[]
+
+window.addNormalPlayer=()=>{
+  const n=normalName.value.trim()
+  if(!n)return
+  normalPlayers.push(n)
+  normalName.value=""
+  normalCount.innerText=`Players ${normalPlayers.length}`
+}
+
+window.startNormal=()=>{
+  players=[...normalPlayers]
+  startGameUI()
+}
+
+window.createRoom=()=>{
+  roomId=Math.random().toString(36).slice(2,8).toUpperCase()
+  set(ref(db,"rooms/"+roomId),{
+    players:[],
+    turn:0,
+    spin:null,
+    question:null
+  })
+  openLobby()
+}
+
+window.joinRoom=()=>{
+  roomId=joinCode.value.toUpperCase()
+  openLobby()
+}
+
+function openLobby(){
+  roomSetup.classList.add("hidden")
+  lobby.classList.remove("hidden")
+  roomCode.innerText=roomId
+
+  onValue(ref(db,"rooms/"+roomId+"/players"),s=>{
+    players=s.val()||[]
+    playersList.innerText=players.join(", ")
+  })
+
+  onValue(ref(db,"rooms/"+roomId+"/spin"),s=>{
+    if(s.val()!=null)animateSpin(s.val())
+  })
+
+  onValue(ref(db,"rooms/"+roomId+"/question"),s=>{
+    if(s.val())question.innerText=s.val()
+  })
+
+  onValue(ref(db,"rooms/"+roomId+"/turn"),s=>{
+    updateTurn(s.val())
+  })
+}
+
+window.joinGame=()=>{
+  myName=playerName.value.trim()
+  if(!myName)return
+  players.push(myName)
+  set(ref(db,"rooms/"+roomId+"/players"),players)
+}
+
+window.startMultiplayer=()=>{
+  lobby.classList.add("hidden")
+  startGameUI()
+}
+
+function startGameUI(){
+  game.classList.remove("hidden")
+  renderPlayers()
+  bottle.onclick=spin
+}
+
+function renderPlayers(){
+  const area=document.getElementById("area")
+  document.querySelectorAll(".player").forEach(e=>e.remove())
+  const r=170,c=210,step=360/players.length
+  players.forEach((p,i)=>{
+    const a=(step*i-90)*Math.PI/180
+    const x=c+r*Math.cos(a)
+    const y=c+r*Math.sin(a)
+    const d=document.createElement("div")
+    d.className="player"
+    d.style.left=x+"px"
+    d.style.top=y+"px"
+    d.innerText=p
+    area.appendChild(d)
+  })
+}
+
+function updateTurn(t){
+  turnInfo.innerText=`Turn ${players[t]}`
+  bottle.style.pointerEvents =
+    modeType==="normal" || players[t]===myName ? "auto" : "none"
+}
+
+function spin(){
+  const i=Math.floor(Math.random()*players.length)
+  if(modeType==="multi"){
+    update(ref(db,"rooms/"+roomId),{
+      spin:i,
+      turn:(players.indexOf(myName)+1)%players.length,
+      question:null
+    })
+  }else{
+    animateSpin(i)
+  }
+}
+
+function animateSpin(i){
+  spinSound.currentTime=0
+  spinSound.play()
+  const angle=360/players.length*i+90
+  rotation+=360*4+angle
+  bottle.style.transform=`translate(-50%,-50%) rotate(${rotation}deg)`
+  result.innerText=`Selected ${players[i]}`
+  tdBox.classList.remove("hidden")
+  question.innerText=""
+}
+
+window.pickTruth=()=>{
+  const q="Truth: "+truths[Math.floor(Math.random()*truths.length)]
+  if(modeType==="multi"){
+    update(ref(db,"rooms/"+roomId+"/question"),q)
+  }else{
+    question.innerText=q
+  }
+  tdBox.classList.add("hidden")
+}
+
+window.pickDare=()=>{
+  const q="Dare: "+dares[Math.floor(Math.random()*dares.length)]
+  if(modeType==="multi"){
+    update(ref(db,"rooms/"+roomId+"/question"),q)
+  }else{
+    question.innerText=q
+  }
+  tdBox.classList.add("hidden")
+}
+</script>
+
+</body>
+</html>
